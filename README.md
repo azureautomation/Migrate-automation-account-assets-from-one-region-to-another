@@ -11,7 +11,7 @@ This PowerShell script is for migration of Automation account assets from the ac
 1. Sign in to the Azure portal.
 2. Go to Automation account that you want to migrate to another region.
 3. Under Process Automation, select Runbooks.
-4. Select Browse gallery and in the search, enter Migrate-Automation-account-from-one-region-to-another and Select.
+4. Select Browse gallery and in the search, enter Migrate-Automation-account-assets-from-one-region-to-another and Select.
 5. In the Import a runbook page, enter a name for the runbook.
 6. Select Runtime version as either 5.1 or 7.1 (preview)
 7. Enter the description and select Import.
