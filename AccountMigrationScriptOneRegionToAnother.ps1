@@ -55,8 +55,8 @@ $SourceResourceGroup=
 $DestinationResourceGroup=
 $SourceSubscriptionId=
 $DestinationSubscriptionId=
-$SourceAutomationAcccountResourceId=
-$DestinationAutomationAcccountResourceId=
+$SourceAutomationAccountResourceId=
+$DestinationAutomationAccountResourceId=
 
 $Types= @("Certificates", "Connections", "Credentials", "Modules", "Runbooks", "Variables")
 
