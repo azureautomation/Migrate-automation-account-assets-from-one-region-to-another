@@ -1,7 +1,18 @@
 # Migrate-automation-account-assets-from-one-region-to-another
 This PowerShell script is for migration of Automation account assets from the account in primary region to the account in secondary region. This script migrates only Runbooks, Modules, Connections, Credentials, Certificates and Variables.
 ### Prerequisites:
-		1. Ensure that the Automation account in the secondary region is created and available so that assets from primary region can be migrated to it.
-		2. System Managed Identities should be enabled in the Automation account in the primary region.
-		3. Ensure that Primary Automation account's Managed Identity has Contributor access with read and write permissions to the Automation account in secondary region. You can enable it by providing the necessary permissions in Secondary Automation account’s managed identities. Learn more
-		4.This script requires access to Automation account assets in primary region. Hence, it should be executed as a runbook in that Automation account for successful migration.
+1. Ensure that the Automation account in the secondary region is created and available so that assets from primary region can be migrated to it.
+2. System Managed Identities should be enabled in the Automation account in the primary region.
+3. Ensure that Primary Automation account's Managed Identity has Contributor access with read and write permissions to the Automation account in secondary region. You can enable it by providing the necessary permissions in Secondary Automation account’s managed identities. Learn more
+4.This script requires access to Automation account assets in primary region. Hence, it should be executed as a runbook in that Automation account for successful migration.
+		
+### Follow the steps to import and execute the runbook:
+
+1. Sign in to the Azure portal.
+2. Go to Automation account that you want to migrate to another region.
+3. Under Process Automation, select Runbooks.
+4. Select Browse gallery and in the search, enter Migrate-Automation-account-from-one-region-to-another and Select.
+5. In the Import a runbook page, enter a name for the runbook.
+6. Select Runtime version as either 5.1 or 7.1 (preview)
+7. Enter the description and select Import.
+8. In the Edit PowerShell Runbook page, edit the required parameters and execute it.
