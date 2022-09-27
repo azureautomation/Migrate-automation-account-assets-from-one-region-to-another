@@ -16,3 +16,17 @@ This PowerShell script is for migration of Automation account assets from the ac
 6. Select Runtime version as either 5.1 or 7.1 (preview)
 7. Enter the description and select Import.
 8. In the Edit PowerShell Runbook page, edit the required parameters and execute it.
+9. You can choose either of the options to edit and execute the script. You can provide the seven mandatory parameters as given in Option 1 or three mandatory parameters given in Option 2 to edit and execute the script:
+	1. Option 1:
+		1. SourceAutomationAccountName
+		2. DestinationAutomationAccountName
+		3. SourceResourceGroup
+		4. DestinationResourceGroup
+		5. SourceSubscriptionId
+		6. DestinationSubscriptionId
+		7. Type[]
+	2. Option 2:
+		1. SourceAutomationAccountResourceId
+		2. DestinationAutomationAccountResourceId
+		3. Type[] 	
+	
