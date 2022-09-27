@@ -541,18 +541,33 @@ Function TransferModules
 
 if($SourceAutomationAccountResourceId.Length -ne 0)
 {
-	$parsedResourceID=ParseReourceID $SourceAutomationAccountResourceId
-	$SourceResourceGroup=$parsedResourceID[0]
-	$SourceSubscriptionId=$parsedResourceID[1]
-	$SourceAutomationAccountName=$parsedResourceID[2]
+	try
+	{
+		$parsedResourceID=ParseReourceID $SourceAutomationAccountResourceId
+		$SourceResourceGroup=$parsedResourceID[0]
+		$SourceSubscriptionId=$parsedResourceID[1]
+		$SourceAutomationAccountName=$parsedResourceID[2]
+	}
+	catch
+	{
+		throw "Invalid source account resource ID entered"
+	}
+
 }
 
 if($DestinationAutomationAccountResourceId.Length -ne 0)
 {
-	$parsedResourceID=ParseReourceID $DestinationAutomationAccountResourceId
-	$DestinationResourceGroup=$parsedResourceID[0]
-	$DestinationSubscriptionId=$parsedResourceID[1]
-	$DestinationAutomationAccountName=$parsedResourceID[2]
+	try
+	{
+		$parsedResourceID=ParseReourceID $DestinationAutomationAccountResourceId
+		$DestinationResourceGroup=$parsedResourceID[0]
+		$DestinationSubscriptionId=$parsedResourceID[1]
+		$DestinationAutomationAccountName=$parsedResourceID[2]
+	}
+	catch
+	{
+		throw "Invalid source account resource ID entered"
+	}
 }
 
 $LocalStoragePath= ".\"
