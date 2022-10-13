@@ -56,8 +56,8 @@ $SourceResourceGroup=
 $DestinationResourceGroup=
 $SourceSubscriptionId=
 $DestinationSubscriptionId=
-$SourceAutomationAccountResourceId="/subscriptions/430eaafe-fb8f-4014-8deb-1b174430a299/resourceGroups/abhishek/providers/Microsoft.Automation/automationAccounts/MigStart"
-$DestinationAutomationAccountResourceId="/subscriptions/430eaafe-fb8f-4014-8deb-1b174430a299/resourceGroups/abhishek/providers/Microsoft.Automation/automationAccounts/testingPW78"
+$SourceAutomationAccountResourceId=
+$DestinationAutomationAccountResourceId=
 
 $Types= @("Credentials")
 
