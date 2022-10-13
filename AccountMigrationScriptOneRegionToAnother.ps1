@@ -2,10 +2,11 @@
 .SYNOPSIS
 	This PowerShell script is for migration of Automation account assets from the account in primary region to the account in secondary region. This script migrates only Runbooks, Modules, Connections, Credentials, Certificates and Variables.
 	Prerequisites:
-		1.Ensure that the Automation account in the secondary region is created and available so that assets from primary region can be migrated to it.
+		1.Ensure that the Automation account in the secondary region is created and available so that assets from primary region can be migrated to it. It is preferred if the destination automation account is one without any custom resources as it prevents potential resource class due to same name and loss of data
 		2.System Managed Identities should be enabled in the Automation account in the primary region.
 		3.Ensure that Primary Automation account's Managed Identity has Contributor access with read and write permissions to the Automation account in secondary region. You can enable it by providing the necessary permissions in Secondary Automation account’s managed identities. Learn more
 		4.This script requires access to Automation account assets in primary region. Hence, it should be executed as a runbook in that Automation account for successful migration.
+		5.Both the source and destination Automation accounts should belong to the same tenant
 .PARAMETER SourceAutomationAccountName
 	[Optional] Name of automation account from where assets need to be migrated (Source Account)
 .PARAMETER DestinationAutomationAccountName
@@ -36,7 +37,7 @@
 
 
 $Version="1.0"
-Write-Output $Version
+Write-Output "Version $Version"
 
 
 try
@@ -55,10 +56,10 @@ $SourceResourceGroup=
 $DestinationResourceGroup=
 $SourceSubscriptionId=
 $DestinationSubscriptionId=
-$SourceAutomationAccountResourceId=
-$DestinationAutomationAccountResourceId=
+$SourceAutomationAccountResourceId="/subscriptions/430eaafe-fb8f-4014-8deb-1b174430a299/resourceGroups/abhishek/providers/Microsoft.Automation/automationAccounts/MigStart"
+$DestinationAutomationAccountResourceId="/subscriptions/430eaafe-fb8f-4014-8deb-1b174430a299/resourceGroups/abhishek/providers/Microsoft.Automation/automationAccounts/testingPW78"
 
-$Types= @("Certificates", "Connections", "Credentials", "Modules", "Runbooks", "Variables")
+$Types= @("Credentials")
 
 
 Function ParseReourceID($resourceID)
@@ -106,8 +107,8 @@ Function Test-IsGuid
 		[string]$StringGuid
 	)
 
-$ObjectGuid = [System.Guid]::empty
-return [System.Guid]::TryParse($StringGuid,[System.Management.Automation.PSReference]$ObjectGuid) # Returns True if successfully parsed
+	$ObjectGuid = [System.Guid]::empty
+	return [System.Guid]::TryParse($StringGuid,[System.Management.Automation.PSReference]$ObjectGuid) # Returns True if successfully parsed
 }
 
 #Get bearer token for authentication
@@ -125,8 +126,8 @@ Function StoreModules($Modules_Custom)
 
 	Foreach($Module in $Modules_Custom)
 	{
-
-
+		
+	
 		$ModuleName = $Module
 		$ModulePath="C:\Modules\User\"+$ModuleName
 		$ModuleZipPath="C:\"+ $tempFolder+"\"+$ModuleName+".zip"
@@ -162,7 +163,7 @@ Function CreateStorageAcc($StorageAccountName, $storageAccountRG)
 	New-AzStorageAccount -ResourceGroupName $storageAccountRG -Name $StorageAccountName -Location westus -SkuName Standard_LRS
 	$storageAccountKey = (Get-AzStorageAccountKey -ResourceGroupName $storageAccountRG -AccountName $storageAccountName).Value[0]
 	return $storageAccountKey
-
+	
 }
 
 Function CreateContainer($Context,$storageContainerName)
@@ -223,7 +224,6 @@ Function Set-Context($SubscriptionId)
 		Write-Error -Message $_.Exception
 		throw $_.Exception
 	}
-	Set-AzContext -SubscriptionId $SubscriptionId
 }
 
 #-----------------------------------------------------------------------------------------------------------------------
@@ -283,11 +283,10 @@ Function Import-PwshModulesFromOldAccount
 	{
 		Write-Error "Failed to retrieve modules from automation account ' $SourceAutomationAccountName '"
 	}
-	# $AllModules.name | Import-Module
 	$ModulesRequired = $AllModules.name
 	$Modules_Custom = Get-ChildItem -Path "C:\Modules\User\" | ?{$_.Attributes -eq "Directory"} | where Name -match $($ModulesRequired -join '|') 
 	return $Modules_Custom
-
+	
 }
 
 #-------------------------------------------------------------------------------------------------------------------------------------------
@@ -298,59 +297,204 @@ Function Export-RunbooksToNewAccount($Runbooks)
 {
 	foreach($Runbook in $Runbooks)
 	{
-		[string]$TempName=$Runbook.Name+".*"
-		$CurrentFilePaths=Get-ChildItem -Path $LocalStoragePath -Filter $TempName -Recurse | %{$_.FullName}
 		[string]$CurrentRunbookType=$Runbook.RunbookType
-		if($CurrentFilePaths -ne 0)
+		$RunbookName=$Runbook.Name
+		$Location=$Runbook.Location
+		$LogProgress= $Runbook.logProgress
+		$LogVerbose= $Runbook.logVerbose
+		$Tags= $Runbook.Tags
+		$JobCount= $Runbook.JobCount
+		$Parameters = $Runbook.Parameters
+		$LastModifiedBy = $Runbook.LastModifiedBy
+		$State = $Runbook.State
+		$CreationTime = $Runbook.CreationTime
+		$LastModifiedTime = $Runbook.LastModifiedTime
+		$Description= $Runbook.Description
+		$bearerToken = Get-AzCachedAccessToken
+		if($null -ne $bearerToken)
 		{
-			if($CurrentRunbookType[0]-eq'G')
-			{
-				if($CurrentRunbookType -eq "GraphPowerShell") {$CurrentRunbookType="GraphicalPowerShell"}
-				else { $CurrentRunbookType="GraphicalPowerShellWorkflow"}
+			$Headers = @{
+				"Authorization" = "Bearer $bearerToken";
 			}
-			if($CurrentRunbookType -eq "PowerShell7")
-			{
-				$CurrentRunbookType="PowerShell"
+			$ContentLink= @{
+				"uri" = "https://raw.githubusercontent.com/azureautomation/Migrate-automation-account-assets-from-one-region-to-another/main/DummyRunbook.ps1";
 			}
-			Import-AzAutomationRunbook -Path $CurrentFilePaths -ResourceGroupName $DestinationResourceGroup -AutomationAccountName $DestinationAutomationAccountName -Type $CurrentRunbookType -Tags $Runbook.Tags -erroraction 'silentlycontinue';
+			
+			$draft= @{
+				"draftContentLink"= $ContentLink;
+				"inEdit" = $False;
+			}		
+			$properties= @{
+				"logVerbose"= $LogVerbose;
+				"logProgress"= $LogProgress;
+				"runbookType"= $CurrentRunbookType;
+				"state"=$State;
+				"draft"=$draft;
+				"description"= $Description;
+				}
+			$url="https://management.azure.com/subscriptions/"+$DestinationSubscriptionId+"/resourceGroups/"+$DestinationResourceGroup+"/providers/Microsoft.Automation/automationAccounts/"+$DestinationAutomationAccountName+"/runbooks/"+$RunbookName+"?api-version=2019-06-01"	
+			$Body = @{
+				"name"= $RunbookName;
+				"properties"= $properties;
+				"location"=$Location;
+				"tags"=$Tags
+			}
+			$bodyjson=($Body| COnvertTo-Json  -Depth 4)
+			try
+			{
+				Invoke-RestMethod -Method "PUT" -Uri "$url" -Body $bodyjson -ContentType "application/json" -Headers $Headers
 
+				if($State -eq "New")
+				{
+					$urlGetContent= "https://management.azure.com/subscriptions/"+$SourceSubscriptionId+"/resourceGroups/"+$SourceResourceGroup+"/providers/Microsoft.Automation/automationAccounts/"+$SourceAutomationAccountName+"/runbooks/"+$RunbookName+"/draft/content?api-version=2019-06-01"
+					$rbContentDraft=Invoke-RestMethod -Method "GET" -Uri "$urlGetContent" -ContentType "application/json" -Headers $Headers
+					$urlPutContent= "https://management.azure.com/subscriptions/"+$DestinationSubscriptionId+"/resourceGroups/"+$DestinationResourceGroup+"/providers/Microsoft.Automation/automationAccounts/"+$DestinationAutomationAccountName+"/runbooks/"+$RunbookName+"/draft/content?api-version=2019-06-01"
+					Invoke-RestMethod -Method "PUT" -Uri "$urlPutContent" -Body $rbContentDraft -Headers $Headers
+				}
+				else
+				{
+					$urlGetContent= "https://management.azure.com/subscriptions/"+$SourceSubscriptionId+"/resourceGroups/"+$SourceResourceGroup+"/providers/Microsoft.Automation/automationAccounts/"+$SourceAutomationAccountName+"/runbooks/"+$RunbookName+"/content?api-version=2019-06-01"
+					$rbContent=Invoke-RestMethod -Method "GET" -Uri "$urlGetContent" -ContentType "application/json" -Headers $Headers
+					$urlPutContent= "https://management.azure.com/subscriptions/"+$DestinationSubscriptionId+"/resourceGroups/"+$DestinationResourceGroup+"/providers/Microsoft.Automation/automationAccounts/"+$DestinationAutomationAccountName+"/runbooks/"+$RunbookName+"/draft/content?api-version=2019-06-01"
+					Invoke-RestMethod -Method "PUT" -Uri "$urlPutContent" -Body $rbContent -Headers $Headers
+					$urlPublish= "https://management.azure.com/subscriptions/"+$DestinationSubscriptionId+"/resourceGroups/"+$DestinationResourceGroup+"/providers/Microsoft.Automation/automationAccounts/"+$DestinationAutomationAccountName+"/runbooks/"+$RunbookName+"/publish?api-version=2019-06-01"
+					Invoke-RestMethod -Method "POST" -Uri "$urlPublish" -Body "" -Headers $Headers
+					if($State -eq "Edit")
+					{
+						$urlGetContentDraft= "https://management.azure.com/subscriptions/"+$SourceSubscriptionId+"/resourceGroups/"+$SourceResourceGroup+"/providers/Microsoft.Automation/automationAccounts/"+$SourceAutomationAccountName+"/runbooks/"+$RunbookName+"/draft/content?api-version=2019-06-01"
+						$rbContentDraft=Invoke-RestMethod -Method "GET" -Uri "$urlGetContentDraft" -ContentType "application/json" -Headers $Headers
+						$urlPutContentDraft= "https://management.azure.com/subscriptions/"+$DestinationSubscriptionId+"/resourceGroups/"+$DestinationResourceGroup+"/providers/Microsoft.Automation/automationAccounts/"+$DestinationAutomationAccountName+"/runbooks/"+$RunbookName+"/draft/content?api-version=2019-06-01"
+						Invoke-RestMethod -Method "PUT" -Uri "$urlPutContentDraft" -Body $rbContentDraft -Headers $Headers
+					}
+				}
+				
+				
+			}
+			catch{
+				Write-Error -Message "Unable to import runbook ' $RunbookName ' to account $DestinationAutomationAccountName. Error Message: $($Error[0].Exception.Message)"
+			}
+				
 		}
-		else
-		{
-			Write-Error "Unable to find runbook named $Runbook.Name on the temporary storage - Reason: Issue with import of runbook $Runbook.Name from automation account $SourceAutomationAccountName"
-		}
-
-		# Publish-AzAutomationRunbook -AutomationAccountName $DestinationAutomationAccountName -Name $Runbook.Name -ResourceGroupName $DestinationResourceGroup;
+			
 	}
 }
 
 Function Export-VariablesToNewAccount($Variables)
 {
+	$bearerToken = Get-AzCachedAccessToken
 	foreach($Variable in $Variables)
-	{
-		[string]$VariableName=$Variable.Name
-		$VariableEncryption=$Variable.Encrypted
-		$VariableValue=Get-AutomationVariable -Name $VariableName
-		New-AzAutomationVariable -AutomationAccountName $DestinationAutomationAccountName -Name $VariableName -Value $VariableValue -ResourceGroupName $DestinationResourceGroup -Encrypted $VariableEncryption
+	{	
+		if($null -ne $bearerToken)
+		{
+			$Headers = @{
+				"Authorization" = "Bearer $bearerToken"
+			}
+
+			[string]$VariableName=$Variable.Name
+			$VariableEncryption=$Variable.Encrypted
+			$VariableDesc=$Variable.Description
+			$VariableValue=Get-AutomationVariable -Name $VariableName
+			$properties= @{
+						"value"= $VariableValue;
+						"isEncrypted"= $VariableEncryption;
+						"description"= $VariableDesc;
+						}
+			$url="https://management.azure.com/subscriptions/"+$DestinationSubscriptionId+"/resourceGroups/"+$DestinationResourceGroup+"/providers/Microsoft.Automation/automationAccounts/"+$DestinationAutomationAccountName+"/variables/"+$VariableName+"?api-version=2019-06-01"	
+			$Body = @{
+						"name"= $VariableName;
+						"properties"= $properties;
+					}
+			$bodyjson=($Body| COnvertTo-Json )
+			try
+			{
+				Invoke-RestMethod -Method "PUT" -Uri "$url" -Body $bodyjson -ContentType "application/json" -Headers $Headers
+			}
+			catch
+			{
+				try
+				{
+					Set-AzAutomationVariable -AutomationAccountName $DestinationAutomationAccountName  -Name $VariableName -Encrypted $VariableEncryption -Value $VariableValue -ResourceGroupName $DestinationResourceGroup -Description $VariableDesc
+				}
+				catch
+				{
+					try
+					{
+						New-AzAutomationVariable -AutomationAccountName $DestinationAutomationAccountName  -Name $VariableName -Encrypted $VariableEncryption -Value $VariableValue -ResourceGroupName $DestinationResourceGroup -Description $VariableDesc
+					}
+					catch
+					{
+						Write-Error -Message "Unable to import Variable '$VariableName' to account $DestinationAutomationAccountName. Error Message: $($Error[0].Exception.Message)"
+					}
+
+				}
+				
+			}
+				
+		}
+		else{
+			Write-Error "Unable to retrieve the authentication token for the account $DestinationAutomationAccountName"
+		}
 
 	}
 }
 
 Function Export-CredentialsToNewAccount($Credentials)
 {
+	$bearerToken = Get-AzCachedAccessToken
 	foreach($Credential in $Credentials)
 	{
-		$getCredential = Get-AutomationPSCredential -Name $Credential.Name
-		New-AzAutomationCredential -AutomationAccountName $DestinationAutomationAccountName -Name $Credential.Name -Value $getCredential -ResourceGroupName $DestinationResourceGroup
+		$CredentialName=$Credential.Name
+		$getCredential = Get-AutomationPSCredential -Name $CredentialName
+		$Username=$getCredential.username	
+		$Password = $getCredential.GetNetworkCredential().Password
+		if($null -ne $bearerToken)
+		{
+			$Headers = @{
+				"Authorization" = "Bearer $bearerToken"
+			}
+			$properties= @{
+						"username"= $Username;
+						"password"= $Password;
+						"description"= $Credential.Description;
+						}
+			$url="https://management.azure.com/subscriptions/"+$DestinationSubscriptionId+"/resourceGroups/"+$DestinationResourceGroup+"/providers/Microsoft.Automation/automationAccounts/"+$DestinationAutomationAccountName+"/credentials/"+$CredentialName+"?api-version=2019-06-01"	
+			$Body = @{
+						"name"= $CredentialName;
+						"properties"= $properties;
+					}
+			$bodyjson=($Body| COnvertTo-Json )
+			try
+			{
+				Invoke-RestMethod -Method "PUT" -Uri "$url" -Body $bodyjson -ContentType "application/json" -Headers $Headers
+			}
+			catch
+			{
+				try
+				{
+					New-AzAutomationCredential -AutomationAccountName $DestinationAutomationAccountName -Name $CredentialName -Value $getCredential -ResourceGroupName $DestinationResourceGroup
+				}
+				catch
+				{
+					Write-Error -Message "Unable to import credentials '$CredentialName' to account $DestinationAutomationAccountName. Error Message: $($Error[0].Exception.Message)"
+				}
+			}
+		}
+		else
+		{
+			Write-Error "Unable to retrieve the authentication token for the account $DestinationAutomationAccountName"
+		}
+		
 	}
 }
 
 Function Export-ConnectionsToNewAccount($Connections)
 {
+	$bearerToken = Get-AzCachedAccessToken
 	foreach($Connection in $Connections)
 	{
 		$ConnectionType=$Connection.ConnectionTypeName
 		$ConnectionFieldValues
+		$ConnectionName=$Connection.Name
 		$getConnection= Get-AutomationConnection $Connection.Name
 		if($ConnectionType -eq "AzureClassicCertificate")
 		{
@@ -361,7 +505,7 @@ Function Export-ConnectionsToNewAccount($Connections)
 		}
 		if($ConnectionType -eq "AzureServicePrincipal")
 		{
-
+			
 			$Thumbprint = $getConnection.CertificateThumbprint
 			$TenantId = $getConnection.TenantId
 			$ApplicationId = $getConnection.ApplicationId
@@ -375,19 +519,59 @@ Function Export-ConnectionsToNewAccount($Connections)
 			$ConnectionFieldValues = @{"AutomationCertificateName"=$getConnection.AutomationCertificateName;"SubscriptionID"=$getConnection.SubscriptionId}
 		}
 
-		New-AzAutomationConnection -Name $Connection.Name -ConnectionTypeName $ConnectionType  -ConnectionFieldValues $ConnectionFieldValues -ResourceGroupName $DestinationResourceGroup -AutomationAccountName $DestinationAutomationAccountName
+		if($null -ne $bearerToken)
+		{
+			$Headers = @{
+				"Authorization" = "Bearer $bearerToken"
+			}
+			$ConnectionTypeName= @{
+				"name"= $ConnectionType;
+			}
+			$properties= @{
+						"fieldDefinitionValues"= $ConnectionFieldValues;
+						"connectionType"= $ConnectionTypeName;
+						"description"= $Connection.Description;
+						}
+			$url="https://management.azure.com/subscriptions/"+$DestinationSubscriptionId+"/resourceGroups/"+$DestinationResourceGroup+"/providers/Microsoft.Automation/automationAccounts/"+$DestinationAutomationAccountName+"/connections/"+$ConnectionName+"?api-version=2019-06-01"	
+			$Body = @{
+						"name"= $ConnectionName;
+						"properties"= $properties;
+					}
+			$bodyjson=($Body| COnvertTo-Json )
+			try
+			{
+				Invoke-RestMethod -Method "PUT" -Uri "$url" -Body $bodyjson -ContentType "application/json" -Headers $Headers
+			}
+			catch
+			{
+				try
+				{
+					New-AzAutomationConnection -Name $Connection.Name -ConnectionTypeName $ConnectionType  -ConnectionFieldValues $ConnectionFieldValues -ResourceGroupName $DestinationResourceGroup -AutomationAccountName $DestinationAutomationAccountName
+				}
+				catch
+				{
+					Write-Error -Message "Unable to import connection '$ConnectionName' to account $DestinationAutomationAccountName. Error Message: $($Error[0].Exception.Message)"
+				}
+			}
+		}
+
+		else
+		{
+			Write-Error "Unable to retrieve the authentication token for the account $DestinationAutomationAccountName"
+		}
+
 	}
 }
 
 Function Export-CertificatesToNewAccount($Certificates)
 {
+	$bearerToken = Get-AzCachedAccessToken
 	foreach($Certificate in $Certificates)
 	{
 		$CertificateName=$Certificate.Name
 		$getCertificate=Get-AutomationCertificate -Name $CertificateName
 		$ASNFormatCertificate=$getCertificate.GetRawCertData()
 		[string]$Base64Certificate =[Convert]::ToBase64String($ASNFormatCertificate)
-		$bearerToken = Get-AzCachedAccessToken
 		if($null -ne $bearerToken)
 		{
 			$Headers = @{
@@ -410,10 +594,11 @@ Function Export-CertificatesToNewAccount($Certificates)
 			{
 				Invoke-RestMethod -Method "PUT" -Uri "$url" -Body $bodyjson -ContentType "application/json" -Headers $Headers
 			}
-			catch{
-				Write-Error -Message "Unable to import cerficate ' $CertificateName ' to account $DestinationAutomationAccountName. Error Message: $($Error[0].Exception.Message)"
+			catch
+			{
+				Write-Error -Message "Unable to import cerficate '$CertificateName' to account $DestinationAutomationAccountName. Error Message: $($Error[0].Exception.Message)"
 			}
-
+			
 		}
 		else{
 			Write-Error "Unable to retrieve the authentication token for the account $DestinationAutomationAccountName"
@@ -424,11 +609,43 @@ Function Export-CertificatesToNewAccount($Certificates)
 
 Function Export-PwshModulesToNewAccount($Modules)
 {
+	$bearerToken = Get-AzCachedAccessToken
 	Foreach($Module in $Modules)
 	{
+		
 		$ModuleName = $Module
-		$BlobURL="https://"+$StorageAccountName+".blob.core.windows.net/"+$storageContainerName+"/"+$ModuleName+".zip"
-		New-AzAutomationModule -AutomationAccountName $DestinationAutomationAccountName -Name $ModuleName -ContentLink $BlobURL -ResourceGroupName $DestinationResourceGroup
+		if($null -ne $bearerToken)
+		{
+			$Headers = @{
+				"Authorization" = "Bearer $bearerToken"
+			}
+			$BlobURL="https://"+$StorageAccountName+".blob.core.windows.net/"+$storageContainerName+"/"+$ModuleName+".zip"
+			# New-AzAutomationModule -AutomationAccountName $DestinationAutomationAccountName -Name $ModuleName -ContentLink $BlobURL -ResourceGroupName $DestinationResourceGroup
+			$url="https://management.azure.com/subscriptions/"+$DestinationSubscriptionId+"/resourceGroups/"+$DestinationResourceGroup+"/providers/Microsoft.Automation/automationAccounts/"+$DestinationAutomationAccountName+"/modules/"+$ModuleName+"?api-version=2019-06-01"	
+			$ContentLink=@{
+				"uri"= $BlobURL
+			}
+			$properties= @{
+				"contentLink"= $ContentLink;
+				"version"= "1.0.0.0"
+			}
+			$Body = @{
+				"properties"= $properties 
+			}
+			$bodyjson=($Body| COnvertTo-Json)
+			try
+			{
+				Invoke-RestMethod -Method "PUT" -Uri "$url" -Body $bodyjson -ContentType "application/json" -Headers $Headers
+			}
+			catch
+			{
+				Write-Error -Message "Unable to import module '$ModuleName' to account $DestinationAutomationAccountName. Error Message: $($Error[0].Exception.Message)"
+			}
+		}
+		else{
+			Write-Error "Unable to retrieve the authentication token for the account $DestinationAutomationAccountName"
+		}
+	
 	}
 }
 
@@ -578,7 +795,6 @@ $storageContainerName = "migrationcontainer"
 $tempFolder=RandomStringProducer
 
 $Access=0
-
 if(CheckifInputIsValid($SourceAutomationAccountName) -and CheckifInputIsValid($SourceResourceGroup) -and CheckifInputIsValid($SourceSubscriptionId) -and CheckifInputIsValid($DestinationAutomationAccountName) -and CheckifInputIsValid($DestinationResourceGroup) -and CheckifInputIsValid($DestinationSubscriptionId))
 {
 	if((Test-IsGuid $SourceSubscriptionId) -and (Test-IsGuid $DestinationSubscriptionId))
