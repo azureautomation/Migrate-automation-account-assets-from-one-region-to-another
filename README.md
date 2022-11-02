@@ -5,7 +5,7 @@ This PowerShell script is for migration of Automation account assets from the ac
 1. Ensure that the Automation account in the secondary region is created and available so that assets from primary region can be migrated to it. It is preferred if the destination automation account is one without any custom resources as it prevents potential resource clash due to same name and loss of data
 2. System Managed Identities should be enabled in the Automation account in the primary region.
 3. System Managed Identities of the Source automation account should have contributor access to the subscription it belongs to
-4. Ensure that Primary Automation account's Managed Identity has Contributor access with read and write permissions to the Automation account in secondary region. You can enable it by providing the necessary permissions in Secondary Automation accountâ€™s managed identities. Learn more
+4. Ensure that Primary Automation account's Managed Identity has Contributor access with read and write permissions to the Automation account in secondary region. You can enable it by providing the necessary permissions in Secondary Automation accounts managed identities.
 5. This script requires access to Automation account assets in primary region. Hence, it should be executed as a runbook in that Automation account for successful migration.
 6. Both the source and destination Automation accounts should belong to the same Azure Active Directory(AAD) tenant
 ### Follow the steps to import and execute the runbook:
