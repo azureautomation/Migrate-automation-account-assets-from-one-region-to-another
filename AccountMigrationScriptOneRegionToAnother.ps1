@@ -2,11 +2,12 @@
 .SYNOPSIS
 	This PowerShell script is for migration of Automation account assets from the account in primary region to the account in secondary region. This script migrates only Runbooks, Modules, Connections, Credentials, Certificates and Variables.
 	Prerequisites:
-		1.Ensure that the Automation account in the secondary region is created and available so that assets from primary region can be migrated to it. It is preferred if the destination automation account is one without any custom resources as it prevents potential resource class due to same name and loss of data
+		1.Ensure that the Automation account in the secondary region is created and available so that assets from primary region can be migrated to it. It is preferred if the destination automation account is one without any custom resources as it prevents potential resource clash due to same name and loss of data
 		2.System Managed Identities should be enabled in the Automation account in the primary region.
-		3.Ensure that Primary Automation account's Managed Identity has Contributor access with read and write permissions to the Automation account in secondary region. You can enable it by providing the necessary permissions in Secondary Automation account’s managed identities. Learn more
-		4.This script requires access to Automation account assets in primary region. Hence, it should be executed as a runbook in that Automation account for successful migration.
-		5.Both the source and destination Automation accounts should belong to the same Azure Active Directory(AAD) tenant
+		3.System Managed Identities of the Source automation account should have contributor access to the subscription it belongs to
+		4.Ensure that Primary Automation account's Managed Identity has Contributor access with read and write permissions to the Automation account in secondary region. You can enable it by providing the necessary permissions in Secondary Automation accountâ€™s managed identities. Learn more
+		5.This script requires access to Automation account assets in primary region. Hence, it should be executed as a runbook in that Automation account for successful migration.
+		6.Both the source and destination Automation accounts should belong to the same Azure Active Directory(AAD) tenant
 .PARAMETER SourceAutomationAccountName
 	[Optional] Name of automation account from where assets need to be migrated (Source Account)
 .PARAMETER DestinationAutomationAccountName
@@ -23,12 +24,14 @@
 	[Optional] Resource Id of the automation account from where assets need to be migrated
 .PARAMETER DestinationAutomationAccountResourceId
 	[Optional] Resource Id of the automation account to where assets need to be migrated
+.PARAMETER LocationDestinationAccount
+	[Mandatory] Location of the destination automation account
 .PARAMETER Type[]
-	[Mandatory] Array consisting of all the types of assets that need to be migrated, possible values are: Certificates, Connections, Credentials, Modules, Runbooks, Variables
+	[Mandatory] Array consisting of all the types of assets that need to be migrated, possible values are Certificates, Connections, Credentials, Modules, Runbooks, and Variables.
 .NOTES
 	1. Script for Migrations from-> Source account to Destination Account (will have to be created for now)
 	2. Please do the following for the execution of script if source account's managed identity does not have read write access control of the destination account:
-		• Get into the destination account and grant access of destination account to your source account's managed identity using this guide Tutorial: https://docs.microsoft.com/en-us/azure/role-based-access-control/quickstart-assign-role-user-portal
+		â€¢ Get into the destination account and grant access of destination account to your source account's managed identity using this guide Tutorial: https://docs.microsoft.com/en-us/azure/role-based-access-control/quickstart-assign-role-user-portal
 .AUTHOR Microsoft
 .VERSION 1.0
 #>
@@ -56,10 +59,10 @@ $SourceResourceGroup=
 $DestinationResourceGroup=
 $SourceSubscriptionId=
 $DestinationSubscriptionId=
+$LocationDestinationAccount=
 $SourceAutomationAccountResourceId=
 $DestinationAutomationAccountResourceId=
-
-$Types= @("Credentials")
+$Types= @("Certificates")
 
 
 Function ParseReourceID($resourceID)
@@ -298,7 +301,7 @@ Function Export-RunbooksToNewAccount($Runbooks)
 	foreach($Runbook in $Runbooks)
 	{
 		[string]$CurrentRunbookType=$Runbook.RunbookType
-		$RunbookName=$Runbook.Name
+		[string]$RunbookName=$Runbook.Name
 		$Location=$Runbook.Location
 		$LogProgress= $Runbook.logProgress
 		$LogVerbose= $Runbook.logVerbose
@@ -336,13 +339,13 @@ Function Export-RunbooksToNewAccount($Runbooks)
 			$Body = @{
 				"name"= $RunbookName;
 				"properties"= $properties;
-				"location"=$Location;
+				"location"=$LocationDestinationAccount;
 				"tags"=$Tags
 			}
-			$bodyjson=($Body| COnvertTo-Json  -Depth 4)
+			$bodyjson=($Body| ConvertTo-Json  -Depth 4)
 			try
 			{
-				Invoke-RestMethod -Method "PUT" -Uri "$url" -Body $bodyjson -ContentType "application/json" -Headers $Headers
+				Invoke-RestMethod -Method "PUT" -Uri $url -Body $bodyjson -ContentType "application/json" -Headers $Headers
 
 				if($State -eq "New")
 				{
@@ -404,7 +407,7 @@ Function Export-VariablesToNewAccount($Variables)
 						"name"= $VariableName;
 						"properties"= $properties;
 					}
-			$bodyjson=($Body| COnvertTo-Json )
+			$bodyjson=($Body| ConvertTo-Json )
 			try
 			{
 				Invoke-RestMethod -Method "PUT" -Uri "$url" -Body $bodyjson -ContentType "application/json" -Headers $Headers
@@ -462,7 +465,7 @@ Function Export-CredentialsToNewAccount($Credentials)
 						"name"= $CredentialName;
 						"properties"= $properties;
 					}
-			$bodyjson=($Body| COnvertTo-Json )
+			$bodyjson=($Body| ConvertTo-Json )
 			try
 			{
 				Invoke-RestMethod -Method "PUT" -Uri "$url" -Body $bodyjson -ContentType "application/json" -Headers $Headers
@@ -537,7 +540,7 @@ Function Export-ConnectionsToNewAccount($Connections)
 						"name"= $ConnectionName;
 						"properties"= $properties;
 					}
-			$bodyjson=($Body| COnvertTo-Json )
+			$bodyjson=($Body| ConvertTo-Json )
 			try
 			{
 				Invoke-RestMethod -Method "PUT" -Uri "$url" -Body $bodyjson -ContentType "application/json" -Headers $Headers
@@ -571,6 +574,10 @@ Function Export-CertificatesToNewAccount($Certificates)
 		$CertificateName=$Certificate.Name
 		$getCertificate=Get-AutomationCertificate -Name $CertificateName
 		$ASNFormatCertificate=$getCertificate.GetRawCertData()
+		if($Certificate.Exportable -eq $True)
+		{
+			$ASNFormatCertificate=$getCertificate.Export("pfx")
+		}
 		[string]$Base64Certificate =[Convert]::ToBase64String($ASNFormatCertificate)
 		if($null -ne $bearerToken)
 		{
