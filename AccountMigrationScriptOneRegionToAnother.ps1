@@ -755,7 +755,7 @@ Function TransferModules
 		{
 			Write-Error -Message "Unable to transfer modules to account $DestinationAutomationAccountName. Error Message: $($Error[0].Exception.Message)"
 		}
-		RemoveStorageAcc $storageAccountName $storageAccountRG $subscriptionId
+# 		RemoveStorageAcc $storageAccountName $storageAccountRG $subscriptionId
 	}
 	else
 	{
